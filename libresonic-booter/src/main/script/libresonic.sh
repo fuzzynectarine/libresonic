@@ -122,6 +122,10 @@ fi
 
 LIBRESONIC_SSL_PASSWORD_LENGTH=${#LIBRESONIC_SSL_PASSWORD}
 if [ ${LIBRESONIC_HTTPS_PORT} -ge 1 -a -n "${LIBRESONIC_SSL_CERT}" -a -n "${LIBRESONIC_SSL_KEY}" -a $LIBRESONIC_SSL_PASSWORD_LENGTH -ge 6 ]; then
+  #delete old keystore (if it exists)
+  if [ -f ${LIBRESONIC_HOME}/libresonic_cert.keystore ]; then
+    rm -f ${LIBRESONIC_HOME}/libresonic_cert.keystore
+  fi
   openssl pkcs12 -inkey $LIBRESONIC_SSL_KEY -in $LIBRESONIC_SSL_CERT -export -out ${LIBRESONIC_HOME}/libresonic.pkcs12 -password pass:${LIBRESONIC_SSL_PASSWORD}
   keytool -importkeystore -srckeystore ${LIBRESONIC_HOME}/libresonic.pkcs12 -srcstoretype PKCS12 -srcstorepass ${LIBRESONIC_SSL_PASSWORD} -destkeystore ${LIBRESONIC_HOME}/libresonic_cert.keystore -deststorepass ${LIBRESONIC_SSL_PASSWORD}
   rm -f ${LIBRESONIC_HOME}/libresonic.pkcs12
