@@ -16,7 +16,9 @@ LIBRESONIC_PIDFILE=
 LIBRESONIC_DEFAULT_MUSIC_FOLDER=/var/music
 LIBRESONIC_DEFAULT_PODCAST_FOLDER=/var/music/Podcast
 LIBRESONIC_DEFAULT_PLAYLIST_FOLDER=/var/playlists
-
+LIBRESONIC_SSL_CERT=
+LIBRESONIC_SSL_KEY=
+LIBRESONIC_SSL_PASSWORD=$(head -c 16 /dev/urandom | md5sum | head -c 32)
 quiet=0
 
 usage() {
@@ -32,6 +34,8 @@ usage() {
     echo "                       incoming HTTP traffic. Default: 4040"
     echo "  --https-port=PORT    The port on which Libresonic will listen for"
     echo "                       incoming HTTPS traffic. Default: 0 (disabled)"
+    echo "  --ssl-cert=FILE      Location of Base64 SSL certificate"
+    echo "  --ssl-key=FILE       Location of the SSL certificate private key"
     echo "  --context-path=PATH  The context path, i.e., the last part of the Libresonic"
     echo "                       URL. Typically '/' or '/libresonic'. Default '/'"
     echo "  --max-memory=MB      The memory limit (max Java heap size) in megabytes."
@@ -64,6 +68,12 @@ while [ $# -ge 1 ]; do
             ;;
         --https-port=?*)
             LIBRESONIC_HTTPS_PORT=${1#--https-port=}
+            ;;
+        --ssl-cert=?*)
+            LIBRESONIC_SSL_CERT=${1#--ssl-cert=}
+            ;;
+        --ssl-key=?*)
+            LIBRESONIC_SSL_KEY=${1#--ssl-key=}
             ;;
         --context-path=?*)
             LIBRESONIC_CONTEXT_PATH=${1#--context-path=}
@@ -110,19 +120,39 @@ if [ -L $0 ] && ([ -e /bin/readlink ] || [ -e /usr/bin/readlink ]); then
     cd $(dirname $(readlink $0))
 fi
 
-${JAVA} -Xmx${LIBRESONIC_MAX_MEMORY}m \
-  -Dlibresonic.home=${LIBRESONIC_HOME} \
-  -Dlibresonic.host=${LIBRESONIC_HOST} \
-  -Dlibresonic.port=${LIBRESONIC_PORT} \
-  -Dlibresonic.httpsPort=${LIBRESONIC_HTTPS_PORT} \
-  -Dlibresonic.contextPath=${LIBRESONIC_CONTEXT_PATH} \
-  -Dlibresonic.defaultMusicFolder=${LIBRESONIC_DEFAULT_MUSIC_FOLDER} \
-  -Dlibresonic.defaultPodcastFolder=${LIBRESONIC_DEFAULT_PODCAST_FOLDER} \
-  -Dlibresonic.defaultPlaylistFolder=${LIBRESONIC_DEFAULT_PLAYLIST_FOLDER} \
-  -Djava.awt.headless=true \
-  -verbose:gc \
-  -jar libresonic-booter-jar-with-dependencies.jar > ${LOG} 2>&1 &
-
+LIBRESONIC_SSL_PASSWORD_LENGTH=${#LIBRESONIC_SSL_PASSWORD}
+if [ ${LIBRESONIC_HTTPS_PORT} -ge 1 -a -n "${LIBRESONIC_SSL_CERT}" -a -n "${LIBRESONIC_SSL_KEY}" -a $LIBRESONIC_SSL_PASSWORD_LENGTH -ge 6 ]; then
+  openssl pkcs12 -inkey $LIBRESONIC_SSL_KEY -in $LIBRESONIC_SSL_CERT -export -out ${LIBRESONIC_HOME}/libresonic.pkcs12 -password pass:${LIBRESONIC_SSL_PASSWORD}
+  keytool -importkeystore -srckeystore ${LIBRESONIC_HOME}/libresonic.pkcs12 -srcstoretype PKCS12 -srcstorepass ${LIBRESONIC_SSL_PASSWORD} -destkeystore ${LIBRESONIC_HOME}/libresonic_cert.keystore -deststorepass ${LIBRESONIC_SSL_PASSWORD}
+  rm -f ${LIBRESONIC_HOME}/libresonic.pkcs12
+  ${JAVA} -Xmx${LIBRESONIC_MAX_MEMORY}m \
+    -Dlibresonic.home=${LIBRESONIC_HOME} \
+    -Dlibresonic.host=${LIBRESONIC_HOST} \
+    -Dlibresonic.port=${LIBRESONIC_PORT} \
+    -Dlibresonic.httpsPort=${LIBRESONIC_HTTPS_PORT} \
+    -Dlibresonic.ssl.keystore=${LIBRESONIC_HOME}/libresonic_cert.keystore \
+    -Dlibresonic.ssl.password=${LIBRESONIC_SSL_PASSWORD} \
+    -Dlibresonic.contextPath=${LIBRESONIC_CONTEXT_PATH} \
+    -Dlibresonic.defaultMusicFolder=${LIBRESONIC_DEFAULT_MUSIC_FOLDER} \
+    -Dlibresonic.defaultPodcastFolder=${LIBRESONIC_DEFAULT_PODCAST_FOLDER} \
+    -Dlibresonic.defaultPlaylistFolder=${LIBRESONIC_DEFAULT_PLAYLIST_FOLDER} \
+    -Djava.awt.headless=true \
+    -verbose:gc \
+    -jar libresonic-booter-jar-with-dependencies.jar > ${LOG} 2>&1 &
+else
+  ${JAVA} -Xmx${LIBRESONIC_MAX_MEMORY}m \
+    -Dlibresonic.home=${LIBRESONIC_HOME} \
+    -Dlibresonic.host=${LIBRESONIC_HOST} \
+    -Dlibresonic.port=${LIBRESONIC_PORT} \
+    -Dlibresonic.httpsPort=${LIBRESONIC_HTTPS_PORT} \
+    -Dlibresonic.contextPath=${LIBRESONIC_CONTEXT_PATH} \
+    -Dlibresonic.defaultMusicFolder=${LIBRESONIC_DEFAULT_MUSIC_FOLDER} \
+    -Dlibresonic.defaultPodcastFolder=${LIBRESONIC_DEFAULT_PODCAST_FOLDER} \
+    -Dlibresonic.defaultPlaylistFolder=${LIBRESONIC_DEFAULT_PLAYLIST_FOLDER} \
+    -Djava.awt.headless=true \
+    -verbose:gc \
+    -jar libresonic-booter-jar-with-dependencies.jar > ${LOG} 2>&1 &
+fi
 # Write pid to pidfile if it is defined.
 if [ $LIBRESONIC_PIDFILE ]; then
     echo $! > ${LIBRESONIC_PIDFILE}
